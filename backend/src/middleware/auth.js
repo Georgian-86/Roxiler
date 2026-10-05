@@ -17,9 +17,18 @@ const authenticate = asyncHandler(async (req, res, next) => {
   }
 
   // Re-read the user so deleted accounts or changed roles take effect immediately.
-  const { rows } = await db.query('SELECT id, name, email, address, role FROM users WHERE id = $1', [payload.sub]);
-  if (!rows[0]) throw ApiError.unauthorized('Account no longer exists');
-  req.user = rows[0];
+  const { rows } = await db.query(
+    'SELECT id, name, email, address, role, password_changed_at FROM users WHERE id = $1',
+    [payload.sub]
+  );
+  const user = rows[0];
+  if (!user) throw ApiError.unauthorized('Account no longer exists');
+  // Tokens issued before the latest password change are revoked (iat has second precision).
+  if (payload.iat < Math.floor(user.password_changed_at.getTime() / 1000)) {
+    throw ApiError.unauthorized('Session expired, please log in again');
+  }
+  const { password_changed_at: _pca, ...publicUser } = user;
+  req.user = publicUser;
   next();
 });
 

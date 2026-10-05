@@ -34,6 +34,14 @@ describe('POST /api/auth/register', () => {
     expect(res.body.errors[field]).toBeDefined();
   });
 
+  it('keeps +tags in emails instead of rewriting them', async () => {
+    const a = await request(app).post('/api/auth/register').send({ ...valid, email: 'a+1@outlook.com' });
+    const b = await request(app).post('/api/auth/register').send({ ...valid, email: 'a+2@outlook.com' });
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    expect(a.body.user.email).toBe('a+1@outlook.com');
+  });
+
   it('rejects duplicate email case-insensitively', async () => {
     await request(app).post('/api/auth/register').send(valid);
     const res = await request(app).post('/api/auth/register').send({ ...valid, email: 'JONATHAN@example.com' });
@@ -79,8 +87,23 @@ describe('PATCH /api/auth/password', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ currentPassword: PASSWORD, newPassword: 'Changed@123' });
     expect(res.status).toBe(200);
+    const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${res.body.token}`);
+    expect(me.status).toBe(200);
     const login = await request(app).post('/api/auth/login').send({ email: user.email, password: 'Changed@123' });
     expect(login.status).toBe(200);
+  });
+
+  it('revokes tokens issued before the password change', async () => {
+    const { token } = await createUserAndLogin();
+    // iat has one-second precision; make sure the change happens in a later second.
+    await new Promise((r) => setTimeout(r, 1100));
+    await request(app)
+      .patch('/api/auth/password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ currentPassword: PASSWORD, newPassword: 'Changed@123' });
+    const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/log in again/);
   });
 
   it('rejects an incorrect current password', async () => {

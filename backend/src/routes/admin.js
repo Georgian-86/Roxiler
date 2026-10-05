@@ -59,4 +59,17 @@ router.post(
   })
 );
 
+router.patch(
+  '/stores/:id/owner',
+  validate([
+    f.idParam(),
+    body('ownerId')
+      .custom((v) => v === null || (Number.isInteger(v) && v > 0))
+      .withMessage('ownerId must be a user id or null'),
+  ]),
+  asyncHandler(async (req, res) => {
+    res.json({ store: await storeService.assignOwner(req.params.id, req.body.ownerId) });
+  })
+);
+
 module.exports = router;

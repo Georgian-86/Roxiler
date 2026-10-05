@@ -41,7 +41,7 @@ npm run dev
 
 **System Administrator**
 - Dashboard with total users, stores and submitted ratings
-- Add users (Admin / Normal user / Store owner) and stores (optionally linked to an unassigned owner)
+- Add users (Admin / Normal user / Store owner) and stores; assign or change a store's owner at any time
 - Store list: name, email, address, rating, owner
 - User list: name, email, address, role (+ rating for store owners)
 - Filters on name, email, address and role; sortable columns; pagination
@@ -62,7 +62,7 @@ Everyone can log out. Routes are protected on both the client and the API.
 
 | Field    | Rule |
 |----------|------|
-| Name     | 20–60 characters |
+| Name     | 20–60 characters (applied to both user and store names, since both are "Name" fields in forms) |
 | Address  | Required, max 400 characters |
 | Password | 8–16 characters, at least one uppercase letter and one special character |
 | Email    | Standard email format, unique (case-insensitive) |
@@ -101,6 +101,7 @@ List endpoints accept `sortBy`, `order` (`asc`/`desc`), `page`, `limit` plus fil
 | GET   | `/admin/owners/available` | admin | Owners without a store |
 | GET   | `/admin/stores` | admin | Filters: `name`, `email`, `address` |
 | POST  | `/admin/stores` | admin | `{ name, email, address, ownerId? }` |
+| PATCH | `/admin/stores/:id/owner` | admin | `{ ownerId \| null }` — assign / change / clear owner |
 | GET   | `/stores` | user | Filters: `name`, `address`, `search`; includes `myRating` |
 | PUT   | `/stores/:id/rating` | user | `{ rating }` — creates (201) or updates (200) |
 | GET   | `/owner/dashboard` | owner | Store, average, distribution, raters |
@@ -141,6 +142,7 @@ frontend/
 ## Security notes
 
 - Passwords hashed with bcrypt; login uses a constant-time path for unknown emails and a generic error.
-- JWTs are verified and the user is re-loaded on each request, so role changes and deletions apply immediately.
+- JWTs are verified and the user is re-loaded on each request, so role changes and deletions apply immediately;
+  tokens issued before a password change are rejected.
 - Sort columns are whitelisted and filters are parameterised (LIKE wildcards escaped) — no SQL injection.
-- Helmet, CORS allow-list, JSON body size limit and rate limiting on auth endpoints.
+- Helmet, CORS allow-list, JSON body size limit and rate limiting on login/register (set `TRUST_PROXY` behind a proxy).

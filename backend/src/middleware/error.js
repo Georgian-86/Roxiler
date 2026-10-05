@@ -11,7 +11,13 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({ message: 'Malformed JSON body' });
   }
   if (err.code === '23505') {
-    return res.status(409).json({ message: 'A record with this email already exists' });
+    const message = /owner_id/.test(err.constraint || '')
+      ? 'This owner already has a store'
+      : 'A record with this email already exists';
+    return res.status(409).json({ message });
+  }
+  if (err.code === '23514' || err.code === '22001') {
+    return res.status(400).json({ message: 'One or more fields are invalid' });
   }
   const status = err instanceof ApiError ? err.status : 500;
   if (status === 500 && config.env !== 'test') console.error(err);

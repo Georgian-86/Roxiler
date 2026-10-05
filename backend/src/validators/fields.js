@@ -16,7 +16,8 @@ const email = (field = 'email') =>
     .trim()
     .isEmail().withMessage('Enter a valid email address')
     .isLength({ max: 254 }).withMessage('Email is too long')
-    .normalizeEmail({ gmail_remove_dots: false, gmail_remove_subaddress: false, all_lowercase: true });
+    // Lowercase only: provider-specific rewrites (e.g. stripping +tags) would merge distinct addresses.
+    .customSanitizer((v) => v.toLowerCase());
 
 const address = (field = 'address') =>
   body(field)

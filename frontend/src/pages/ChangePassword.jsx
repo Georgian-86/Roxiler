@@ -3,7 +3,7 @@ import { PageHeader } from '../components/Layout'
 import FormField from '../components/FormField'
 import useForm from '../hooks/useForm'
 import { rules } from '../utils/validation'
-import api from '../api/client'
+import api, { tokenStore } from '../api/client'
 import { useToast } from '../context/ToastContext'
 import { PASSWORD_HINT } from '../utils/constants'
 
@@ -19,7 +19,8 @@ export default function ChangePassword() {
   )
 
   const onSubmit = form.handleSubmit(async ({ currentPassword, newPassword }) => {
-    await api.patch('/auth/password', { currentPassword, newPassword })
+    const res = await api.patch('/auth/password', { currentPassword, newPassword })
+    tokenStore.set(res.data.token)
     form.reset()
     notify('Password updated successfully')
   })

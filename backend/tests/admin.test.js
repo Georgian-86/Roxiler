@@ -135,3 +135,37 @@ describe('admin stores', () => {
     expect(res.body).toEqual({ totalUsers: 2, totalStores: 1, totalRatings: 1 });
   });
 });
+
+describe('store owner assignment', () => {
+  it('assigns, rejects taken owners, and clears', async () => {
+    const store = (await request(app).post('/api/admin/stores').set(auth()).send(newStore())).body.store;
+    const owner = await createUserAndLogin({ role: 'OWNER' });
+    let res = await request(app).patch(`/api/admin/stores/${store.id}/owner`).set(auth()).send({ ownerId: owner.user.id });
+    expect(res.status).toBe(200);
+    expect(res.body.store.ownerId).toBe(owner.user.id);
+
+    // Re-assigning the same owner to the same store is fine.
+    res = await request(app).patch(`/api/admin/stores/${store.id}/owner`).set(auth()).send({ ownerId: owner.user.id });
+    expect(res.status).toBe(200);
+
+    const other = (await request(app).post('/api/admin/stores').set(auth()).send(newStore({ email: 'o2@store.com' }))).body.store;
+    res = await request(app).patch(`/api/admin/stores/${other.id}/owner`).set(auth()).send({ ownerId: owner.user.id });
+    expect(res.status).toBe(400);
+
+    res = await request(app).patch(`/api/admin/stores/${store.id}/owner`).set(auth()).send({ ownerId: null });
+    expect(res.body.store.ownerId).toBeNull();
+  });
+
+  it('validates input and 404s for unknown stores', async () => {
+    expect((await request(app).patch('/api/admin/stores/1/owner').set(auth()).send({ ownerId: 'x' })).status).toBe(400);
+    expect((await request(app).patch('/api/admin/stores/999/owner').set(auth()).send({ ownerId: null })).status).toBe(404);
+  });
+});
+
+describe('pagination edge cases', () => {
+  it('reports the real total for a page past the end', async () => {
+    const res = await request(app).get('/api/admin/users?page=50').set(auth());
+    expect(res.body.data).toHaveLength(0);
+    expect(res.body.meta.total).toBe(1);
+  });
+});

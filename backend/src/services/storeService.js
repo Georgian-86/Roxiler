@@ -1,6 +1,6 @@
 const db = require('../db/pool');
 const ApiError = require('../utils/ApiError');
-const { buildListOptions, buildFilters, paginated } = require('../utils/listQuery');
+const { buildListOptions, buildFilters, paginated, queryPage } = require('../utils/listQuery');
 
 const RATING_AGG = `
   LEFT JOIN (
@@ -19,26 +19,40 @@ const STORE_SORTS = {
 
 const USER_STORE_SORTS = { ...STORE_SORTS, myRating: 'mine.rating' };
 
-function withTotal(rows, opts) {
-  const total = rows[0] ? Number(rows[0].total) : 0;
-  return paginated(rows.map(({ total: _t, ...r }) => r), total, opts);
+/** Friendly validation for an owner assignment; the UNIQUE constraint remains the final guard. */
+async function assertAssignableOwner(ownerId, storeId = null) {
+  const { rows } = await db.query(
+    `SELECT u.role, s.id AS store_id FROM users u LEFT JOIN stores s ON s.owner_id = u.id WHERE u.id = $1`,
+    [ownerId]
+  );
+  if (!rows[0]) throw ApiError.badRequest('Validation failed', { ownerId: 'Owner not found' });
+  if (rows[0].role !== 'OWNER') {
+    throw ApiError.badRequest('Validation failed', { ownerId: 'Selected user is not a store owner' });
+  }
+  if (rows[0].store_id && rows[0].store_id !== storeId) {
+    throw ApiError.badRequest('Validation failed', { ownerId: 'This owner already has a store' });
+  }
 }
 
 async function createStore({ name, email, address, ownerId }) {
-  if (ownerId) {
-    const { rows } = await db.query('SELECT role FROM users WHERE id = $1', [ownerId]);
-    if (!rows[0]) throw ApiError.badRequest('Validation failed', { ownerId: 'Owner not found' });
-    if (rows[0].role !== 'OWNER') {
-      throw ApiError.badRequest('Validation failed', { ownerId: 'Selected user is not a store owner' });
-    }
-    const owned = await db.query('SELECT 1 FROM stores WHERE owner_id = $1', [ownerId]);
-    if (owned.rowCount) throw ApiError.badRequest('Validation failed', { ownerId: 'This owner already has a store' });
-  }
+  if (ownerId) await assertAssignableOwner(ownerId);
   const { rows } = await db.query(
     `INSERT INTO stores (name, email, address, owner_id) VALUES ($1, $2, $3, $4)
      RETURNING id, name, email, address, owner_id AS "ownerId", created_at AS "createdAt"`,
     [name, email, address, ownerId || null]
   );
+  return rows[0];
+}
+
+/** Assigns (or clears, with null) the owner of an existing store. */
+async function assignOwner(storeId, ownerId) {
+  if (ownerId) await assertAssignableOwner(ownerId, storeId);
+  const { rows } = await db.query(
+    `UPDATE stores SET owner_id = $2 WHERE id = $1
+     RETURNING id, name, email, address, owner_id AS "ownerId"`,
+    [storeId, ownerId || null]
+  );
+  if (!rows[0]) throw ApiError.notFound('Store not found');
   return rows[0];
 }
 
@@ -52,7 +66,8 @@ async function listStoresForAdmin(query) {
   ]);
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   params.push(opts.limit, opts.offset);
-  const { rows } = await db.query(
+  return queryPage(
+    db,
     `SELECT s.id, s.name, s.email, s.address, s.created_at AS "createdAt",
             agg.avg_rating AS rating, COALESCE(agg.rating_count, 0) AS "ratingCount",
             o.id AS "ownerId", o.name AS "ownerName",
@@ -62,9 +77,9 @@ async function listStoresForAdmin(query) {
      ${where}
      ${opts.orderSql}
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
+    params,
+    opts
   );
-  return withTotal(rows, opts);
 }
 
 /** Normal-user listing: overall rating plus the caller's own rating. */
@@ -85,7 +100,8 @@ async function listStoresForUser(userId, query) {
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const all = [userId, ...params, opts.limit, opts.offset];
-  const { rows } = await db.query(
+  return queryPage(
+    db,
     `SELECT s.id, s.name, s.address,
             agg.avg_rating AS rating, COALESCE(agg.rating_count, 0) AS "ratingCount",
             mine.rating AS "myRating",
@@ -95,9 +111,9 @@ async function listStoresForUser(userId, query) {
      ${where}
      ${opts.orderSql}
      LIMIT $${all.length - 1} OFFSET $${all.length}`,
-    all
+    all,
+    opts
   );
-  return withTotal(rows, opts);
 }
 
 /** Creates or updates the caller's rating for a store. */
@@ -132,21 +148,23 @@ async function getOwnerDashboard(ownerId, query) {
   const opts = buildListOptions(query, RATER_SORTS, 'updatedAt', 'u.id');
   if (!store) return { store: null, raters: paginated([], 0, opts) };
 
-  const { rows } = await db.query(
+  const raters = await queryPage(
+    db,
     `SELECT u.id, u.name, u.email, u.address, r.rating, r.updated_at AS "updatedAt",
             COUNT(*) OVER() AS total
      FROM ratings r JOIN users u ON u.id = r.user_id
      WHERE r.store_id = $1
      ${opts.orderSql}
      LIMIT $2 OFFSET $3`,
-    [store.id, opts.limit, opts.offset]
+    [store.id, opts.limit, opts.offset],
+    opts
   );
   const { rows: dist } = await db.query(
     'SELECT rating, COUNT(*)::int AS count FROM ratings WHERE store_id = $1 GROUP BY rating',
     [store.id]
   );
   const distribution = [1, 2, 3, 4, 5].map((n) => ({ rating: n, count: dist.find((d) => d.rating === n)?.count || 0 }));
-  return { store: { ...store, distribution }, raters: withTotal(rows, opts) };
+  return { store: { ...store, distribution }, raters };
 }
 
 module.exports = {
@@ -154,6 +172,7 @@ module.exports = {
   USER_STORE_SORT_KEYS: Object.keys(USER_STORE_SORTS),
   RATER_SORT_KEYS: Object.keys(RATER_SORTS),
   createStore,
+  assignOwner,
   listStoresForAdmin,
   listStoresForUser,
   upsertRating,

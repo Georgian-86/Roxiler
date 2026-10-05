@@ -41,4 +41,20 @@ function paginated(rows, total, opts) {
   };
 }
 
-module.exports = { buildListOptions, buildFilters, paginated };
+/**
+ * Runs a list query whose last two params are LIMIT and OFFSET and which selects
+ * `COUNT(*) OVER() AS total`. A page past the end returns no rows (and so no total),
+ * so in that case the total is recovered by re-running the query for its first row.
+ */
+async function queryPage(db, text, params, opts) {
+  let { rows } = await db.query(text, params);
+  let total = rows[0] ? Number(rows[0].total) : 0;
+  if (!rows.length && opts.offset > 0) {
+    const probe = await db.query(text, [...params.slice(0, -2), 1, 0]);
+    total = probe.rows[0] ? Number(probe.rows[0].total) : 0;
+  }
+  rows = rows.map(({ total: _t, ...r }) => r);
+  return paginated(rows, total, opts);
+}
+
+module.exports = { buildListOptions, buildFilters, paginated, queryPage };

@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/pool');
 const config = require('../config');
 const ApiError = require('../utils/ApiError');
-const { buildListOptions, buildFilters, paginated } = require('../utils/listQuery');
+const { buildListOptions, buildFilters, queryPage } = require('../utils/listQuery');
 
 const PUBLIC_FIELDS = 'u.id, u.name, u.email, u.address, u.role, u.created_at AS "createdAt"';
 
@@ -50,7 +50,11 @@ async function changePassword(userId, currentPassword, newPassword) {
     throw ApiError.badRequest('Validation failed', { newPassword: 'New password must differ from the current one' });
   }
   const hash = await bcrypt.hash(newPassword, config.bcryptRounds);
-  await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]);
+  // Truncated to whole seconds so a token issued right after this change (same second) stays valid.
+  await db.query(
+    "UPDATE users SET password_hash = $1, password_changed_at = date_trunc('second', NOW()) WHERE id = $2",
+    [hash, userId]
+  );
 }
 
 async function listUsers(query) {
@@ -63,17 +67,17 @@ async function listUsers(query) {
   ]);
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   params.push(opts.limit, opts.offset);
-  const { rows } = await db.query(
+  return queryPage(
+    db,
     `SELECT ${PUBLIC_FIELDS},
             CASE WHEN u.role = 'OWNER' THEN ${OWNER_RATING_SQL} END AS rating,
             COUNT(*) OVER() AS total
      FROM users u ${where}
      ${opts.orderSql}
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
+    params,
+    opts
   );
-  const total = rows[0] ? Number(rows[0].total) : 0;
-  return paginated(rows.map(({ total: _t, ...r }) => r), total, opts);
 }
 
 async function getUserById(id) {

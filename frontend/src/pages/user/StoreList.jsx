@@ -17,6 +17,8 @@ export default function StoreList() {
   const list = useList('/stores', { initialFilters: { name: '', address: '' } })
 
   const handleRated = (storeId, result) => {
+    // A rating changes the row's position when sorting by rating, so refetch instead.
+    if (['rating', 'myRating'].includes(list.sort.sortBy)) return list.reload()
     list.setState((s) => ({
       ...s,
       data: s.data.map((row) =>

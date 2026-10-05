@@ -13,7 +13,7 @@ const f = require('../validators/fields');
 const router = express.Router();
 
 // Used to equalise timing when the email does not exist.
-const DUMMY_HASH = bcrypt.hashSync('timing-safe-dummy', 4);
+const DUMMY_HASH = bcrypt.hashSync('timing-safe-dummy', config.bcryptRounds);
 
 function issueToken(user) {
   return jwt.sign({ sub: user.id, role: user.role }, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
@@ -35,7 +35,7 @@ router.post(
 router.post(
   '/login',
   validate([
-    body('email').isString().trim().isEmail().withMessage('Enter a valid email address').normalizeEmail({ all_lowercase: true, gmail_remove_dots: false, gmail_remove_subaddress: false }),
+    body('email').isString().trim().isEmail().withMessage('Enter a valid email address').customSanitizer((v) => v.toLowerCase()),
     body('password').isString().notEmpty().withMessage('Password is required'),
   ]),
   asyncHandler(async (req, res) => {
@@ -59,7 +59,8 @@ router.patch(
   ]),
   asyncHandler(async (req, res) => {
     await userService.changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
-    res.json({ message: 'Password updated successfully' });
+    // Older tokens are now revoked, so hand this session a fresh one.
+    res.json({ message: 'Password updated successfully', token: issueToken(req.user) });
   })
 );
 
