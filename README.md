@@ -5,6 +5,8 @@ role-based access for **System Administrators**, **Normal Users** and **Store Ow
 
 **Live demo:** https://roxiler-storerate-rho.vercel.app (Vercel + Supabase Postgres — demo accounts below)
 
+**Project overview (PDF):** [docs/StoreRate-Project-Overview.pdf](docs/StoreRate-Project-Overview.pdf) — architecture, data model, security, infrastructure IDs and test results.
+
 | Layer    | Tech |
 |----------|------|
 | Backend  | Node.js, Express 5, express-validator, JWT, bcrypt |
