@@ -3,6 +3,8 @@
 A full-stack web app where users rate stores registered on the platform (1–5), with a single login and
 role-based access for **System Administrators**, **Normal Users** and **Store Owners**.
 
+**Live demo:** https://roxiler-storerate-rho.vercel.app (Vercel + Supabase Postgres — demo accounts below)
+
 | Layer    | Tech |
 |----------|------|
 | Backend  | Node.js, Express 5, express-validator, JWT, bcrypt |
@@ -138,6 +140,37 @@ frontend/
 | backend   | `npm run lint` | ESLint |
 | frontend  | `npm run dev` / `npm run build` | Dev server / production build |
 | frontend  | `npm test` / `npm run lint` | Vitest / oxlint |
+
+## Deployment (Vercel + Supabase)
+
+The repo deploys as a single Vercel project: the React build is served as static files and the Express
+app runs as one serverless function (`api/index.js`) behind `/api/*` (see `vercel.json`).
+
+1. **Database** — create a Supabase project and apply `backend/src/db/migrations/*.sql`.
+   The live instance uses a dedicated least-privilege login role (`storerate_app`, DML only on the app
+   tables via RLS policies); the tables have RLS enabled with no policies for `anon`/`authenticated`, so
+   they are not reachable through Supabase's public Data API.
+2. **Environment variables** on Vercel:
+
+   | Key | Value |
+   |-----|-------|
+   | `DATABASE_URL` | Supabase **transaction pooler** URL (port 6543), e.g. `postgresql://<role>.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:6543/postgres` |
+   | `DATABASE_SSL` | `true` |
+   | `DB_POOL_MAX` | `3` (small pools per serverless instance) |
+   | `JWT_SECRET` | long random string |
+   | `TRUST_PROXY` | `1` |
+
+3. Import the GitHub repo in Vercel (root directory = repo root). Pushes to `main` deploy to production.
+   Functions run in `bom1` (Mumbai), next to the Supabase `ap-south-1` database.
+
+### Testing a deployment
+
+```bash
+BASE_URL=https://your-app.vercel.app node scripts/smoke-test.mjs      # 34 API checks, all roles
+BASE_URL=https://your-app.vercel.app node scripts/ui-smoke-test.mjs   # 15 browser journeys (needs playwright)
+```
+
+Both create records with `smoke-*` / `ui-*@example.com` emails that can be deleted afterwards.
 
 ## Security notes
 
