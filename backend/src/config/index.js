@@ -12,6 +12,9 @@ const config = {
   jwtSecret: process.env.JWT_SECRET || (env === 'production' ? undefined : 'dev-only-insecure-secret'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  databaseSsl: process.env.DATABASE_SSL === 'true',
+  // Keep this small on serverless, where many instances may each hold a pool.
+  dbPoolMax: Number(process.env.DB_POOL_MAX) || 10,
   bcryptRounds: env === 'test' ? 4 : 10,
 };
 

@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const { notFound, errorHandler } = require('./middleware/error');
+const db = require('./db/pool');
 
 const app = express();
 
@@ -26,7 +27,14 @@ const credentialLimiter = rateLimit({
   message: { message: 'Too many attempts, please try again later' },
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/api/health', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({ status: 'ok', database: 'up' });
+  } catch {
+    res.status(503).json({ status: 'degraded', database: 'down' });
+  }
+});
 if (config.env !== 'test') app.use(['/api/auth/login', '/api/auth/register'], credentialLimiter);
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
